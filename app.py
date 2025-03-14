@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Age Estimation API - Single File
+Age Estimation API - Single File - Compatible with both OpenAI and Ollama APIs
 
 https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
 
@@ -16,17 +16,21 @@ TODO: For GPU deployment, update `device_map` and `torch_dtype` accordingly.
 import os
 import time
 import asyncio
+import aiohttp
 import base64
 import re
 import logging
+import json
 import traceback
 from io import BytesIO
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Union, Literal
 
 import torch
 from PIL import Image
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, Field
 
 # Import model classes and utilities per the Qwen2.5-VL docs
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
@@ -79,7 +83,7 @@ class AgeEstimationModel:
             logger.error("Error converting image to base64: " + str(e))
             raise
 
-    async def estimate_age(self, image_data: bytes) -> Dict[str, Any]:
+    async def estimate_age(self, image_data: bytes, prompt: str = "What is the age of this person? Please reply with just a number.") -> Dict[str, Any]:
         """
         Estimate age by constructing a chat-style input following the Qwen2.5-VL guidelines.
         Uses a fixed prompt asking for the age of the person.
@@ -94,7 +98,7 @@ class AgeEstimationModel:
                     "role": "user",
                     "content": [
                         {"type": "image", "image": img_b64},
-                        {"type": "text", "text": "What is the age of this person? Please reply with just a number."}
+                        {"type": "text", "text": prompt}
                     ]
                 }
             ]
@@ -142,11 +146,66 @@ class AgeEstimationModel:
             logger.error(traceback.format_exc())
             return {"age": None, "error": str(e), "traceback": traceback.format_exc(), "success": False}
 
+
+# ----------------- PYDANTIC MODELS -----------------
+
+# OpenAI API Models
+class ImageURL(BaseModel):
+    url: str
+
+class ContentItem(BaseModel):
+    type: Literal["text", "image_url"]
+    text: Optional[str] = None
+    image_url: Optional[ImageURL] = None
+
+class Message(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: Union[str, List[ContentItem]]
+
+class ChatCompletionRequest(BaseModel):
+    model: str
+    messages: List[Message]
+    max_tokens: Optional[int] = 300
+    temperature: Optional[float] = 1.0
+    stream: Optional[bool] = False
+
+class Delta(BaseModel):
+    role: Optional[str] = None
+    content: Optional[str] = None
+
+class Choice(BaseModel):
+    index: int
+    message: Optional[Message] = None
+    delta: Optional[Delta] = None
+    finish_reason: Optional[str] = None
+
+class Usage(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: List[Choice]
+    usage: Optional[Usage] = None
+
+# Ollama API Models
+class GenerateRequest(BaseModel):
+    model: str = Field("age-estimation", description="Model name to use")
+    prompt: str = Field(..., description="Prompt to generate a response for")
+    images: Optional[List[str]] = Field(None, description="Base64 encoded images")
+    stream: Optional[bool] = Field(False, description="Whether to stream the response")
+    options: Optional[Dict[str, Any]] = Field(None, description="Additional model parameters")
+
+
 # ----------------- FASTAPI APPLICATION -----------------
 
 app = FastAPI(
-    title="Age Estimation API",
-    description="API for estimating age using Qwen2.5-VL-3B-Instruct. Refer to https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct for docs and code examples.",
+    title="Age Estimation API (OpenAI and Ollama Compatible)",
+    description="API for estimating age using Qwen2.5-VL-3B-Instruct with both OpenAI and Ollama API compatibility.",
     version="0.1.0"
 )
 
@@ -189,34 +248,155 @@ async def startup_event():
 async def health_check() -> Dict[str, Any]:
     """Health check endpoint"""
     return {
-        "ok": True,
+        "status": "ok" if model else "loading" if model_loading else "unavailable",
         "info": get_system_info(),
-        "model_status": "loaded" if model else "loading" if model_loading else "not_loaded"
     }
 
-@app.post("/estimate-age")
-async def estimate_age(image: UploadFile = File(...)) -> Dict[str, Any]:
-    """Estimate age from an uploaded image"""
+# ----------------- UTILITY FUNCTIONS -----------------
+
+async def download_image_from_url(url: str) -> bytes:
+    """Download image from URL and return as bytes"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=10) as response:
+            if response.status != 200:
+                raise HTTPException(status_code=400, detail=f"Failed to download image: HTTP {response.status}")
+            return await response.read()
+
+def _extract_image_data_from_base64(image_data: str) -> bytes:
+    """Extract binary image data from base64 encoded string"""
+    # Handle various base64 formats
+    if "base64," in image_data:
+        image_data = image_data.split("base64,")[1]
+    
+    try:
+        return base64.b64decode(image_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 image: {str(e)}")
+
+def _extract_image_data_from_openai_messages(messages: List[Message]) -> tuple:
+    """Extract binary image data and prompt from OpenAI messages format"""
+    # Start with default prompt
+    prompt = "What is the age of this person? Please reply with just a number."
+    image_data = None
+    
+    # Process the last user message
+    for message in reversed(messages):
+        if message.role == "user":
+            if isinstance(message.content, str):
+                prompt = message.content
+                continue
+                
+            for item in message.content:
+                if item.type == "text" and item.text:
+                    prompt = item.text
+                elif item.type == "image_url" and item.image_url:
+                    image_url = item.image_url.url
+                    # Handle base64 encoded images
+                    if image_url.startswith("data:"):
+                        image_data = _extract_image_data_from_base64(image_url)
+                    # Handle URLs (not implemented here)
+                    else:
+                        raise HTTPException(status_code=400, detail="Only base64 encoded images are supported")
+            break
+    
+    if not image_data:
+        raise HTTPException(status_code=400, detail="No image found in the request")
+        
+    return image_data, prompt
+
+async def _stream_openai_response(result: Dict[str, Any]) -> str:
+    """Stream response in the OpenAI format"""
+    response_id = f"chatcmpl-{int(time.time())}"
+    timestamp = int(time.time())
+    age = result.get("age", 0)
+    
+    # First chunk with role
+    choice = {
+        "index": 0,
+        "delta": {"role": "assistant"},
+        "finish_reason": None
+    }
+    response_data = {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": timestamp,
+        "model": "age-estimation",
+        "choices": [choice]
+    }
+    yield f"data: {json.dumps(response_data)}\n\n"
+    
+    # Content chunk
+    choice = {
+        "index": 0,
+        "delta": {"content": str(age)},
+        "finish_reason": None
+    }
+    response_data = {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": timestamp,
+        "model": "age-estimation",
+        "choices": [choice]
+    }
+    yield f"data: {json.dumps(response_data)}\n\n"
+    
+    # Final chunk
+    choice = {
+        "index": 0,
+        "delta": {},
+        "finish_reason": "stop"
+    }
+    response_data = {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": timestamp,
+        "model": "age-estimation",
+        "choices": [choice]
+    }
+    yield f"data: {json.dumps(response_data)}\n\n"
+    yield "data: [DONE]\n\n"
+
+async def _stream_ollama_response(result: Dict[str, Any]) -> str:
+    """Stream response in the Ollama format"""
+    age = result.get("age", 0)
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    
+    response_data = {
+        "model": "age-estimation",
+        "created_at": timestamp,
+        "response": f"{age}",
+        "done": False
+    }
+    yield json.dumps(response_data) + "\n"
+    
+    # Final response
+    response_data["done"] = True
+    response_data["total_duration"] = int(result.get("processing_time_seconds", 0) * 1e9)  # nanoseconds
+    yield json.dumps(response_data) + "\n"
+
+# ----------------- OPENAI COMPATIBLE ENDPOINTS -----------------
+
+@app.post("/v1/chat/completions")
+async def create_chat_completion(request: ChatCompletionRequest):
+    """Generate a chat completion (OpenAI compatible)"""
     if not model:
         if model_loading:
             raise HTTPException(status_code=503, detail="Model is still loading, please try again later")
         raise HTTPException(status_code=503, detail="Model not loaded")
     
-    # Validate file extension
-    valid_extensions = [".jpg", ".jpeg", ".png"]
-    file_ext = os.path.splitext(image.filename)[1].lower()
-    if file_ext not in valid_extensions:
-        raise HTTPException(status_code=400, detail=f"Invalid file format. Supported formats: {', '.join(valid_extensions)}")
-    
-    # Read image data
-    image_data = await image.read()
-    if not image_data:
-        raise HTTPException(status_code=400, detail="Empty file")
+    # Extract image data and prompt from the request
+    try:
+        image_data, prompt = _extract_image_data_from_openai_messages(request.messages)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to extract image from request: {str(e)}")
     
     # Process image with the model
     start_time = time.time()
-    result = await model.estimate_age(image_data)
+    result = await model.estimate_age(image_data, prompt)
     processing_time = time.time() - start_time
+    result["processing_time_seconds"] = processing_time
     
     if not result.get("success", False):
         error_detail = result.get("error", "Unknown error")
@@ -224,15 +404,141 @@ async def estimate_age(image: UploadFile = File(...)) -> Dict[str, Any]:
             logger.error(f"Error details: {result['traceback']}")
         raise HTTPException(status_code=500, detail=error_detail)
     
+    # Format response according to OpenAI API
+    response_id = f"chatcmpl-{int(time.time())}"
+    timestamp = int(time.time())
+    age = result.get("age", 0)
+    
+    if request.stream:
+        return StreamingResponse(
+            _stream_openai_response(result),
+            media_type="text/event-stream"
+        )
+    else:
+        response = {
+            "id": response_id,
+            "object": "chat.completion",
+            "created": timestamp,
+            "model": request.model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": str(age)
+                    },
+                    "finish_reason": "stop"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": len(prompt), # Approximate
+                "completion_tokens": len(str(age)),
+                "total_tokens": len(prompt) + len(str(age))
+            }
+        }
+        return response
+
+@app.get("/v1/models")
+async def list_models_openai() -> Dict[str, Any]:
+    """List available models (OpenAI compatible)"""
     return {
-        "filename": image.filename,
-        "age": result["age"],
-        "processing_time_seconds": processing_time,
-        "raw_response": result.get("raw_response", ""),
-        "info": get_system_info()
+        "data": [
+            {
+                "id": "age-estimation",
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "organization-owner"
+            }
+        ],
+        "object": "list"
     }
 
-# ----------------- UTILITY FUNCTIONS -----------------
+# ----------------- OLLAMA COMPATIBLE ENDPOINTS -----------------
+
+@app.post("/api/generate")
+async def generate_ollama(request: Request):
+    """Generate a completion (Ollama compatible)"""
+    if not model:
+        if model_loading:
+            raise HTTPException(status_code=503, detail="Model is still loading, please try again later")
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    request_data = await request.json()
+    
+    # Extract data from Ollama format
+    model_name = request_data.get("model", "age-estimation")
+    prompt = request_data.get("prompt", "What is the age of this person?")
+    images = request_data.get("images", [])
+    stream = request_data.get("stream", False)
+    
+    if not images:
+        raise HTTPException(status_code=400, detail="Images are required for age estimation")
+    
+    # Extract image data
+    try:
+        image_data = _extract_image_data_from_base64(images[0])
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to extract image from request: {str(e)}")
+    
+    # Process image with the model
+    start_time = time.time()
+    result = await model.estimate_age(image_data, prompt)
+    processing_time = time.time() - start_time
+    result["processing_time_seconds"] = processing_time
+    
+    if not result.get("success", False):
+        error_detail = result.get("error", "Unknown error")
+        if "traceback" in result:
+            logger.error(f"Error details: {result['traceback']}")
+        raise HTTPException(status_code=500, detail=error_detail)
+    
+    # Format response according to Ollama API
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    age = result.get("age", 0)
+    
+    if stream:
+        return StreamingResponse(
+            _stream_ollama_response(result),
+            media_type="application/json"
+        )
+    else:
+        response = {
+            "model": model_name,
+            "created_at": timestamp,
+            "response": str(age),
+            "done": True,
+            "total_duration": int(processing_time * 1e9),  # nanoseconds
+        }
+        return response
+
+@app.get("/api/health")
+async def health_check_ollama() -> Dict[str, Any]:
+    """Health check endpoint (Ollama compatible)"""
+    return {
+        "status": "ok" if model else "loading" if model_loading else "unavailable",
+        "info": get_system_info(),
+    }
+
+@app.get("/api/tags")
+async def list_models_ollama() -> Dict[str, Any]:
+    """List available models (Ollama compatible)"""
+    return {
+        "models": [
+            {
+                "name": "age-estimation",
+                "modified_at": int(time.time()),
+                "size": 0,
+                "digest": "age-estimation",
+                "details": {
+                    "parent_model": "Qwen/Qwen2.5-VL-3B-Instruct",
+                    "format": "vision",
+                    "family": "qwen",
+                    "parameter_size": "3B",
+                    "quantization_level": "none"
+                }
+            }
+        ]
+    }
 
 def get_api_version() -> str:
     """Return the API version"""
@@ -250,4 +556,4 @@ def get_system_info() -> Dict[str, Any]:
 # Run the application if executed directly
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=7860, reload=True)

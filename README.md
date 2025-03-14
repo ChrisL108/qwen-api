@@ -1,6 +1,10 @@
 # Age Estimation API
 
-Single-file FastAPI application that estimates age from an uploaded image using the Qwen2.5-VL-3B-Instruct model.
+A dual-compatible API for age estimation using Qwen2.5-VL vision language model.
+
+- **OpenAI Compatible:** Use the standard OpenAI chat completions format
+- **Ollama Compatible:** Use the simpler Ollama generation format
+
 All application logic is contained in `app.py`. The application is started using the provided `run.sh` shell script.
 
 ## Setup & Run
@@ -17,17 +21,339 @@ pip install -r requirements.txt
 ./run.sh
 ```
 
-## Endpoints
+The API will be available at http://localhost:7860.
 
-### GET /health
-Returns the health status and system information.
 
-### POST /estimate-age
-Accepts an image file (JPG, JPEG, or PNG) and returns an estimated age along with other metadata.
+## API Documentation
 
-## Example Usage
+The API supports two interface styles: OpenAI and Ollama.
+
+### Health Check Endpoints
+
+#### Universal Health Check
+
+```
+GET /health
+```
+
+Returns the API's current health status.
+
+#### Ollama-style Health Check
+
+```
+GET /api/health
+```
+
+Returns the API's current health status in Ollama-compatible format.
+
+### OpenAI-Compatible Endpoints
+
+#### List Models
+
+```
+GET /v1/models
+```
+
+Returns a list of available models in OpenAI format.
+
+#### Create Chat Completion
+
+```
+POST /v1/chat/completions
+```
+
+Request body:
+
+```json
+{
+  "model": "age-estimation",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is the age of this person?"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "data:image/jpeg;base64,YOUR_BASE64_STRING_HERE"
+          }
+        }
+      ]
+    }
+  ],
+  "stream": false
+}
+```
+
+Response:
+
+```json
+{
+  "id": "chatcmpl-1234567890",
+  "object": "chat.completion",
+  "created": 1709123456,
+  "model": "age-estimation",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "35"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 34,
+    "completion_tokens": 2,
+    "total_tokens": 36
+  }
+}
+```
+
+### Ollama-Compatible Endpoints
+
+#### List Models
+
+```
+GET /api/tags
+```
+
+Returns a list of available models in Ollama format.
+
+#### Generate
+
+```
+POST /api/generate
+```
+
+Request body:
+
+```json
+{
+  "model": "age-estimation",
+  "prompt": "What is the age of this person?",
+  "images": ["data:image/jpeg;base64,YOUR_BASE64_STRING_HERE"],
+  "stream": false,
+  "options": {}
+}
+```
+
+Response:
+
+```json
+{
+  "model": "age-estimation",
+  "created_at": "2023-01-01T12:00:00Z",
+  "response": "35",
+  "done": true,
+  "total_duration": 450000000
+}
+```
+
+## Streaming Responses
+
+Both API formats support streaming responses by setting `"stream": true` in the request. The responses will be sent incrementally as they become available.
+
+### OpenAI streaming format
+
+```
+data: {"id":"chatcmpl-1234567890","object":"chat.completion.chunk","created":1709123456,"model":"age-estimation","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1234567890","object":"chat.completion.chunk","created":1709123456,"model":"age-estimation","choices":[{"index":0,"delta":{"content":"35"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1234567890","object":"chat.completion.chunk","created":1709123456,"model":"age-estimation","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
+### Ollama streaming format
+
+```
+{"model":"age-estimation","created_at":"2023-01-01T12:00:00Z","response":"35","done":false}
+{"model":"age-estimation","created_at":"2023-01-01T12:00:00Z","response":"35","done":true,"total_duration":450000000}
+```
+
+## Usage Examples
+
+### Python Client (OpenAI Format)
+
+```python
+import requests
+import base64
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+# Encode image
+base64_image = encode_image("path/to/your/image.jpg")
+
+# OpenAI format
+payload = {
+    "model": "age-estimation",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What is the age of this person?"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}"
+                    }
+                }
+            ]
+        }
+    ]
+}
+
+response = requests.post("http://localhost:7860/v1/chat/completions", json=payload)
+print(f"Estimated age: {response.json()['choices'][0]['message']['content']}")
+```
+
+### Python Client (Ollama Format)
+
+```python
+import requests
+import base64
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+# Encode image
+base64_image = encode_image("path/to/your/image.jpg")
+
+# Ollama format
+payload = {
+    "model": "age-estimation",
+    "prompt": "What is the age of this person?",
+    "images": [f"data:image/jpeg;base64,{base64_image}"],
+    "stream": False
+}
+
+response = requests.post("http://localhost:7860/api/generate", json=payload)
+print(f"Estimated age: {response.json()['response']}")
+```
+
+### cURL Example (OpenAI format)
 
 ```bash
-curl --location 'http://127.0.0.1:8000/estimate-age' \
---form 'image=@"/Users/chrislacaille/Documents/ai-learning/qwen-api/img/mid-30s.jpg"'
+curl -X POST http://localhost:7860/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "age-estimation",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the age of this person?"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/jpeg;base64,YOUR_BASE64_STRING_HERE"
+            }
+          }
+        ]
+      }
+    ]
+  }'
 ```
+
+### cURL Example (Ollama format)
+
+```bash
+curl -X POST http://localhost:7860/api/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "age-estimation",
+    "prompt": "What is the age of this person?",
+    "images": ["data:image/jpeg;base64,YOUR_BASE64_STRING_HERE"]
+  }'
+```
+
+## Deployment
+
+### Docker Deployment
+
+A Dockerfile is provided for containerized deployments:
+
+```dockerfile
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install necessary system packages
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Expose the port
+EXPOSE 7860
+
+# Start the application
+CMD ["python", "app.py"]
+```
+
+Build and run the Docker container:
+
+```bash
+docker build -t age-estimation-api .
+docker run -p 7860:7860 age-estimation-api
+```
+
+### Production Considerations
+
+For production deployments:
+
+1. Use a reverse proxy like Nginx for SSL termination and load balancing
+2. Set `device_map` and `torch_dtype` according to your hardware capabilities
+3. Consider using a process manager like Supervisor or systemd
+4. Use a production-grade ASGI server like Gunicorn with Uvicorn workers
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Model Loading Failures**
+   - Check your Hugging Face token is set
+   - Ensure enough disk space for model downloads
+   - Verify network connectivity to Hugging Face servers
+
+2. **Memory Issues**
+   - Reduce maximum image resolution
+   - Use a smaller model if available
+   - Adjust `torch_dtype` for reduced precision
+
+3. **Slow Processing**
+   - Enable GPU acceleration by updating `device_map`
+   - Use smaller images
+   - Consider adding a caching layer
+
+### Logs
+
+The API uses Python's logging module with INFO level by default. Check logs for details about any issues.
+
+## License
+
+[Include your license information here]
+
