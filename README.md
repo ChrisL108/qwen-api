@@ -51,6 +51,43 @@ GET /api/health
 
 ## Usage Examples
 
+### Python Client (OpenAI SDK)
+
+```python
+import openai
+
+# Initialize the client with the local endpoint
+client = openai.OpenAI(
+    api_key="not-needed",
+    base_url="http://127.0.0.1:7860/v1"
+)
+
+# Create the request
+response = client.chat.completions.create(
+    model="age-estimation",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What is the age of this person? Please reply with just the number."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "base64-encoded-image-string <-OR-> url-to-image"
+                    }
+                }
+            ]
+        }
+    ],
+)
+
+# Print the result
+print(f"Estimated age: {response.choices[0].message.content}")
+```
+
 ### Python Client (OpenAI Format)
 
 ```python
@@ -90,44 +127,6 @@ response = requests.post("http://localhost:7860/v1/chat/completions", json=paylo
 print(f"Estimated age: {response.json()['choices'][0]['message']['content']}")
 ```
 
-### Python Client (OpenAI SDK)
-
-```python
-import openai
-
-# Initialize the client with the local endpoint
-client = openai.OpenAI(
-    api_key="not-needed",
-    base_url="http://127.0.0.1:7860/v1"
-)
-
-# Create the request
-response = client.chat.completions.create(
-    model="age-estimation",
-    messages=[
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "What is the age of this person? Please reply with just the number."
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "base64-encoded-image-string <-OR-> url-to-image"
-                    }
-                }
-            ]
-        }
-    ],
-    max_tokens=300 # <-- not being used yet
-)
-
-# Print the result
-print(f"Estimated age: {response.choices[0].message.content}")
-```
-
 ### Next.js Client (OpenAI SDK)
 
 ```python
@@ -160,7 +159,6 @@ const response = await openai.chat.completions.create({
 			]
 		}
 	],
-	max_tokens: 300, // <-- not being used yet
 })
 
 console.log(`Estimated age: ${response.choices[0].message.content}`)
@@ -256,11 +254,12 @@ docker run -p 7860:7860 age-estimation-api
    - Use smaller images
    - Consider adding a caching layer
 
-### Logs
-
-The API uses Python's logging module with INFO level by default. Check logs for details about any issues.
 
 ## License
 
-[Include your license information here]
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
 
