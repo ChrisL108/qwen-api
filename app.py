@@ -7,6 +7,7 @@ https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
 Requirements:
     pip install git+https://github.com/huggingface/transformers accelerate
     pip install qwen-vl-utils[decord]==0.0.8
+    pip install aiohttp
     (M1 Mac) had to run: `pip install qwen-vl-utils`
 
 Test on an M1 Mac using CPU. 
@@ -23,7 +24,7 @@ import logging
 import json
 import traceback
 from io import BytesIO
-from typing import Dict, Any, List, Optional, Union, Literal
+from typing import Dict, Any, List, Optional, Union, Literal, Tuple
 
 import torch
 from PIL import Image
@@ -196,7 +197,7 @@ class ChatCompletionResponse(BaseModel):
 class GenerateRequest(BaseModel):
     model: str = Field("age-estimation", description="Model name to use")
     prompt: str = Field(..., description="Prompt to generate a response for")
-    images: Optional[List[str]] = Field(None, description="Base64 encoded images")
+    images: Optional[List[str]] = Field(None, description="Base64 encoded images or URLs")
     stream: Optional[bool] = Field(False, description="Whether to stream the response")
     options: Optional[Dict[str, Any]] = Field(None, description="Additional model parameters")
 
@@ -256,11 +257,18 @@ async def health_check() -> Dict[str, Any]:
 
 async def download_image_from_url(url: str) -> bytes:
     """Download image from URL and return as bytes"""
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=10) as response:
-            if response.status != 200:
-                raise HTTPException(status_code=400, detail=f"Failed to download image: HTTP {response.status}")
-            return await response.read()
+    try:
+        logger.info(f"Downloading image from URL: {url}")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as response:
+                if response.status != 200:
+                    raise HTTPException(status_code=400, detail=f"Failed to download image: HTTP {response.status}")
+                image_data = await response.read()
+                logger.info(f"Downloaded {len(image_data)} bytes from URL")
+                return image_data
+    except aiohttp.ClientError as e:
+        logger.error(f"Error downloading image: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to download image: {str(e)}")
 
 def _extract_image_data_from_base64(image_data: str) -> bytes:
     """Extract binary image data from base64 encoded string"""
@@ -273,11 +281,15 @@ def _extract_image_data_from_base64(image_data: str) -> bytes:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid base64 image: {str(e)}")
 
-def _extract_image_data_from_openai_messages(messages: List[Message]) -> tuple:
-    """Extract binary image data and prompt from OpenAI messages format"""
+def _extract_image_data_from_openai_messages(messages: List[Message]) -> Tuple[Optional[bytes], Optional[str], str]:
+    """
+    Extract information from OpenAI messages format
+    Returns: (image_data, image_url, prompt)
+    """
     # Start with default prompt
     prompt = "What is the age of this person? Please reply with just a number."
     image_data = None
+    image_url = None
     
     # Process the last user message
     for message in reversed(messages):
@@ -290,19 +302,19 @@ def _extract_image_data_from_openai_messages(messages: List[Message]) -> tuple:
                 if item.type == "text" and item.text:
                     prompt = item.text
                 elif item.type == "image_url" and item.image_url:
-                    image_url = item.image_url.url
+                    url = item.image_url.url
                     # Handle base64 encoded images
-                    if image_url.startswith("data:"):
-                        image_data = _extract_image_data_from_base64(image_url)
-                    # Handle URLs (not implemented here)
+                    if url.startswith("data:"):
+                        image_data = _extract_image_data_from_base64(url)
+                    # For external URLs, store for later download
                     else:
-                        raise HTTPException(status_code=400, detail="Only base64 encoded images are supported")
+                        image_url = url
             break
     
-    if not image_data:
+    if not image_data and not image_url:
         raise HTTPException(status_code=400, detail="No image found in the request")
         
-    return image_data, prompt
+    return image_data, image_url, prompt
 
 async def _stream_openai_response(result: Dict[str, Any]) -> str:
     """Stream response in the OpenAI format"""
@@ -386,10 +398,20 @@ async def create_chat_completion(request: ChatCompletionRequest):
     
     # Extract image data and prompt from the request
     try:
-        image_data, prompt = _extract_image_data_from_openai_messages(request.messages)
+        image_data, image_url, prompt = _extract_image_data_from_openai_messages(request.messages)
+        
+        # If we have a URL but no image data, download the image
+        if not image_data and image_url:
+            logger.info(f"Downloading image from URL in OpenAI format: {image_url}")
+            image_data = await download_image_from_url(image_url)
+            
+        if not image_data:
+            raise HTTPException(status_code=400, detail="Failed to process image from request")
     except HTTPException as e:
         raise e
     except Exception as e:
+        logger.error(f"Error processing image: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=400, detail=f"Failed to extract image from request: {str(e)}")
     
     # Process image with the model
@@ -476,9 +498,21 @@ async def generate_ollama(request: Request):
     
     # Extract image data
     try:
-        image_data = _extract_image_data_from_base64(images[0])
+        # Check if the image is a URL or base64
+        image_source = images[0]
+        
+        # If it's a base64 encoded string
+        if image_source.startswith("data:"):
+            image_data = _extract_image_data_from_base64(image_source)
+        # If it's a URL
+        else:
+            logger.info(f"Downloading image from URL in Ollama format: {image_source}")
+            image_data = await download_image_from_url(image_source)
+            
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to extract image from request: {str(e)}")
+        logger.error(f"Error processing Ollama image: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=400, detail=f"Failed to process image: {str(e)}")
     
     # Process image with the model
     start_time = time.time()
