@@ -222,6 +222,44 @@ response = requests.post("http://localhost:7860/v1/chat/completions", json=paylo
 print(f"Estimated age: {response.json()['choices'][0]['message']['content']}")
 ```
 
+### Next.js Client (OpenAI Format)
+
+```python
+'use client'
+
+import OpenAI from 'openai'
+
+const openai = new OpenAI({
+	apiKey: 'not-needed',
+	baseURL: 'http://127.0.0.1:7860/v1',
+	dangerouslyAllowBrowser: true 
+})
+
+const response = await openai.chat.completions.create({
+	model: 'age-estimation',
+	messages: [
+		{
+			role: 'user',
+			content: [
+				{
+					type: 'text',
+					text: 'What is the age of this person? Please reply with just the number.'
+				},
+				{
+					type: 'image_url',
+					image_url: {
+						url: 'base64-encoded-image-string <-OR-> url-to-image'
+					}
+				}
+			]
+		}
+	],
+	max_tokens: 300,
+})
+
+console.log(`Estimated age: ${response.choices[0].message.content}`)
+```
+
 ### Python Client (Ollama Format)
 
 ```python
