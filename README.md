@@ -66,7 +66,7 @@ Returns a list of available models in OpenAI format.
 POST /v1/chat/completions
 ```
 
-Request body:
+Request body (`image_url.url` can also be a URL to an image):
 
 ```json
 {
@@ -82,7 +82,7 @@ Request body:
         {
           "type": "image_url",
           "image_url": {
-            "url": "data:image/jpeg;base64,YOUR_BASE64_STRING_HERE" | "https://example.com/image.jpg"
+            "url": "data:image/jpeg;base64,YOUR_BASE64_STRING_HERE"
           }
         }
       ]
