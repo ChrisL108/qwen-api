@@ -1,23 +1,29 @@
-FROM python:3.10-slim
+FROM python:3.12-slim
 
-WORKDIR /app
+# Prevent Python from buffering stdout and stderr
+ENV PYTHONUNBUFFERED=1
 
-# Install necessary system packages
+WORKDIR /service
+
+# Install necessary system packages (including Pillow dependencies)
 RUN apt-get update && apt-get install -y \
     build-essential \
+    libjpeg-dev \
+    zlib1g-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY requirements.txt .
+# Copy only requirements for better caching
+COPY requirements.txt /service/
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy the rest of the application code
+COPY . /service/
 
-# Expose the port
+# Expose the port used by the application
 EXPOSE 7860
 
-# Start the application
-CMD ["python", "app.py"]
+# Start the application using uvicorn
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]

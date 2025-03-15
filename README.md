@@ -5,18 +5,20 @@ A dual-compatible API for age estimation using Qwen2.5-VL vision language model.
 - **OpenAI Compatible:** Use the standard OpenAI chat completions format
 - **Ollama Compatible:** Use the simpler Ollama generation format
 
-All application logic is contained in `app.py`. The application is started using the provided `run.sh` shell script.
 
 ## Setup & Run
+#### Create and activate virtual environment
 ```bash
 python3 -m venv venv
 ```
 ```bash
 source venv/bin/activate
 ```
+#### Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
+#### Run the API
 ```bash
 ./run.sh
 ```
@@ -27,6 +29,8 @@ The API will be available at http://localhost:7860.
 ## API Documentation
 
 The API supports two interface styles: OpenAI and Ollama.
+
+- **All endpoints that accept images accept a base64 encoded image string or a URL to an image.**
 
 ### Health Check Endpoints
 
@@ -73,12 +77,12 @@ Request body:
       "content": [
         {
           "type": "text",
-          "text": "What is the age of this person?"
+          "text": "What is the age of this person? Please reply with just the number."
         },
         {
           "type": "image_url",
           "image_url": {
-            "url": "data:image/jpeg;base64,YOUR_BASE64_STRING_HERE"
+            "url": "data:image/jpeg;base64,YOUR_BASE64_STRING_HERE" | "https://example.com/image.jpg"
           }
         }
       ]
@@ -285,34 +289,6 @@ curl -X POST http://localhost:7860/api/generate \
 ## Deployment
 
 ### Docker Deployment
-
-A Dockerfile is provided for containerized deployments:
-
-```dockerfile
-FROM python:3.10-slim
-
-WORKDIR /app
-
-# Install necessary system packages
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
-
-# Expose the port
-EXPOSE 7860
-
-# Start the application
-CMD ["python", "app.py"]
-```
 
 Build and run the Docker container:
 
