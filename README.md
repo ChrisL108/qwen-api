@@ -222,7 +222,7 @@ response = requests.post("http://localhost:7860/v1/chat/completions", json=paylo
 print(f"Estimated age: {response.json()['choices'][0]['message']['content']}")
 ```
 
-### Next.js Client (OpenAI Format)
+### Next.js Client (OpenAI SDK)
 
 ```python
 'use client'
