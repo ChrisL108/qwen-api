@@ -1,25 +1,26 @@
+import os
 import torch
+from dotenv import load_dotenv
 
-MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
-# MODEL_NAME = "Qwen/Qwen2.5-VL-7B-Instruct"
-# MODEL_NAME = "Qwen/Qwen2.5-VL-72B-Instruct"
+load_dotenv()
 
-DEFAULT_PROMPT = "What is the estimated age of this person? Please reply with an exact number of your best guess."
+# Single hardcoded token, no token system
+API_TOKEN = os.getenv("API_TOKEN")
 
-# lower resolution
-MIN_PIXELS = 256 * 28 * 28
-MAX_PIXELS = 1280 * 28 * 28
+MODEL_NAME = os.getenv("MODEL_NAME")
 
-# higher resolution
-# MIN_PIXELS = 224 * 224
-# MAX_PIXELS = 2048 * 2048
+USE_FAST = os.getenv("USE_FAST", "True").lower() == "true"
 
-USE_FAST = True
+USE_FLASH_ATTN = os.getenv("USE_FLASH_ATTN", "True").lower() == "true"
 
-# torch.bfloat16 is preferred if running on TPUs or specific NVIDIA A100/H100 GPUs
-# TORCH_DTYPE = torch.float16
-TORCH_DTYPE = torch.float32
+dtype_str = os.getenv("TORCH_DTYPE", "")
+if dtype_str == "float16":
+    TORCH_DTYPE = torch.float16
+elif dtype_str == "bfloat16":
+    TORCH_DTYPE = torch.bfloat16
+else:
+    TORCH_DTYPE = "auto"
 
-DEVICE_MAP = "cpu"
-# DEVICE_MAP = "cuda"
-# DEVICE_MAP = "mps" # Metal Performance Shaders - Apple Silicon (has issues with qwen2.5-vl afaict)
+DEVICE_MAP = os.getenv("DEVICE_MAP", "auto")
+
+CACHE_DIR = os.getenv("CACHE_DIR", None)

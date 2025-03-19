@@ -47,7 +47,7 @@ class ChatCompletionResponse(BaseModel):
 
 # Ollama API Models
 class GenerateRequest(BaseModel):
-    model: str = Field("age-estimation", description="Model name to use")
+    model: str = Field("Qwen/Qwen2.5-VL-3B-Instruct", description="Model name to use")
     prompt: str = Field(..., description="Prompt to generate a response for")
     images: Optional[List[str]] = Field(None, description="Base64 encoded images or URLs")
     stream: Optional[bool] = Field(False, description="Whether to stream the response")

@@ -64,7 +64,7 @@ client = openai.OpenAI(
 
 # Create the request
 response = client.chat.completions.create(
-    model="age-estimation",
+    model="Qwen/Qwen2.5-VL-3B-Instruct",
     messages=[
         {
             "role": "user",
@@ -103,7 +103,7 @@ base64_image = encode_image("path/to/your/image.jpg")
 
 # OpenAI format
 payload = {
-    "model": "age-estimation",
+    "model": "Qwen/Qwen2.5-VL-3B-Instruct",
     "messages": [
         {
             "role": "user",
@@ -179,7 +179,7 @@ base64_image = encode_image("path/to/your/image.jpg")
 
 # Ollama format
 payload = {
-    "model": "age-estimation",
+    "model": "Qwen/Qwen2.5-VL-3B-Instruct",
     "prompt": "What is the age of this person?",
     "images": [f"data:image/jpeg;base64,{base64_image}"],
     "stream": False
@@ -195,7 +195,7 @@ print(f"Estimated age: {response.json()['response']}")
 curl -X POST http://localhost:7860/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "age-estimation",
+    "model": "Qwen/Qwen2.5-VL-3B-Instruct",
     "messages": [
       {
         "role": "user",
@@ -222,7 +222,7 @@ curl -X POST http://localhost:7860/v1/chat/completions \
 curl -X POST http://localhost:7860/api/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "age-estimation",
+    "model": "Qwen/Qwen2.5-VL-3B-Instruct",
     "prompt": "What is the age of this person?",
     "images": ["data:image/jpeg;base64,YOUR_BASE64_STRING_HERE"]
   }'

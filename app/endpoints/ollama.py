@@ -1,20 +1,19 @@
 import time
 import json
 import traceback
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse
-from app.utils import get_system_info
-from app.config import DEFAULT_PROMPT
+from app.endpoints.auth import get_api_key
 
 router = APIRouter()
 
 async def stream_ollama_response(result: dict) -> str:
-    age = result.get("age", 0)
+    raw_response = result.get("response", "")
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     response_data = {
-        "model": "age-estimation",
+        "model": "Qwen/Qwen2.5-VL-3B-Instruct",
         "created_at": timestamp,
-        "response": f"{age}",
+        "response": raw_response,
         "done": False
     }
     yield json.dumps(response_data) + "\n"
@@ -23,14 +22,14 @@ async def stream_ollama_response(result: dict) -> str:
     yield json.dumps(response_data) + "\n"
 
 @router.post("/api/generate")
-async def generate_ollama(request: Request):
+async def generate_ollama(request: Request, api_key: str = Depends(get_api_key)):
     model = request.app.state.model
     if not model:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     request_data = await request.json()
-    model_name = request_data.get("model", "age-estimation")
-    prompt = request_data.get("prompt", DEFAULT_PROMPT)
+    model_name = request_data.get("model", "Qwen/Qwen2.5-VL-3B-Instruct")
+    prompt = request_data.get("prompt", "")
     images = request_data.get("images", [])
     stream = request_data.get("stream", False)
     
@@ -38,21 +37,21 @@ async def generate_ollama(request: Request):
         raise HTTPException(status_code=400, detail="Images are required for age estimation")
 
     start_time = time.time()
-    result = await model.estimate_age(images[0], prompt)
+    raw_response = await model.generate_response(images[0], prompt)
     processing_time = time.time() - start_time
-    result["processing_time_seconds"] = processing_time
+    raw_response["processing_time_seconds"] = processing_time
     
-    if not result.get("success", False):
-        raise HTTPException(status_code=500, detail=result.get("error", "Unknown error"))
+    if not raw_response.get("success", False):
+        raise HTTPException(status_code=500, detail=raw_response.get("error", "Unknown error"))
     if stream:
-        return StreamingResponse(stream_ollama_response(result), media_type="application/json")
+        return StreamingResponse(stream_ollama_response(raw_response), media_type="application/json")
     else:
         timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        age = result.get("age", 0)
+        response = raw_response.get("response", "")
         response = {
             "model": model_name,
             "created_at": timestamp,
-            "response": str(age),
+            "response": response,
             "done": True,
             "total_duration": int(processing_time * 1e9)
         }
@@ -67,14 +66,14 @@ async def health_check_ollama(request: Request):
     }
 
 @router.get("/api/tags")
-async def list_models_ollama():
+async def list_models_ollama(api_key: str = Depends(get_api_key)):
     return {
         "models": [
             {
-                "name": "age-estimation",
+                "name": "Qwen/Qwen2.5-VL-3B-Instruct",
                 "modified_at": int(time.time()),
                 "size": 0,
-                "digest": "age-estimation",
+                "digest": "Qwen/Qwen2.5-VL-3B-Instruct",
                 "details": {
                     "parent_model": "Qwen/Qwen2.5-VL-3B-Instruct",
                     "format": "vision",
