@@ -4,6 +4,7 @@ import traceback
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse
 from app.endpoints.auth import get_api_key
+from app.utils import format_message_for_qwen, get_system_info
 
 router = APIRouter()
 
@@ -21,6 +22,7 @@ async def stream_ollama_response(result: dict) -> str:
     response_data["total_duration"] = int(result.get("processing_time_seconds", 0) * 1e9)
     yield json.dumps(response_data) + "\n"
 
+
 @router.post("/api/generate")
 async def generate_ollama(request: Request, api_key: str = Depends(get_api_key)):
     model = request.app.state.model
@@ -34,10 +36,12 @@ async def generate_ollama(request: Request, api_key: str = Depends(get_api_key))
     stream = request_data.get("stream", False)
     
     if not images:
-        raise HTTPException(status_code=400, detail="Images are required for age estimation")
+        raise HTTPException(status_code=400, detail="Images are required for visual analysis")
 
+    formatted_messages = format_message_for_qwen(images, prompt)
+    
     start_time = time.time()
-    raw_response = await model.generate_response(images[0], prompt)
+    raw_response = await model.generate_response(formatted_messages)
     processing_time = time.time() - start_time
     raw_response["processing_time_seconds"] = processing_time
     

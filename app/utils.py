@@ -78,6 +78,17 @@ def extract_assistant_response(output_text: str) -> str:
     # Fallback: return the original text if we can't parse it
     return output_text
 
+def format_message_for_qwen(image_urls, prompt):
+    content = [{"type": "text", "text": prompt}]
+    
+    for url in image_urls:
+        content.append({"type": "image", "image": url})
+    
+    return [{
+        "role": "user",
+        "content": content
+    }]
+
 def get_api_version() -> str:
     return "0.1.0"
 

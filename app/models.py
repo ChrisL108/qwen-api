@@ -4,7 +4,7 @@ import logging
 import time
 import traceback
 from io import BytesIO
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 import torch
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
@@ -40,15 +40,8 @@ class AgeEstimationModel:
 
         logger.info(f"Model loaded successfully, using device: {self.model.device}")
 
-    async def generate_response(self, image_data: str, prompt: str = "") -> Dict[str, Any]:
+    async def generate_response(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
-            messages = [{
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image_data},
-                    {"type": "text", "text": prompt}
-                ]
-            }]
             text_prompt = self.processor.apply_chat_template(
                 messages,
                 tokenize=False, 
