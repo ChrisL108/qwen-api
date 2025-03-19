@@ -1,4 +1,4 @@
-# Age Estimation API
+# Qwen-2.5-VL Model Gateway (OpenAI and Ollama Compatible)
 
 A dual-compatible API for age estimation using Qwen2.5-VL vision language model.
 
@@ -23,7 +23,7 @@ pip install -r requirements.txt
 ./run.sh
 ```
 
-The API will be available at http://localhost:7860.
+The API will be available at https://coder1-demo.lively-video-dev-hoodoo.livelyvideo.tv.
 
 
 ## API Documentation
@@ -58,8 +58,8 @@ import openai
 
 # Initialize the client with the local endpoint
 client = openai.OpenAI(
-    api_key="not-needed",
-    base_url="http://127.0.0.1:7860/v1"
+    api_key="super-secret-key",
+    base_url="https://coder1-demo.lively-video-dev-hoodoo.livelyvideo.tv/v1"
 )
 
 # Create the request
@@ -123,7 +123,7 @@ payload = {
     ]
 }
 
-response = requests.post("http://localhost:7860/v1/chat/completions", json=payload)
+response = requests.post("https://coder1-demo.lively-video-dev-hoodoo.livelyvideo.tv/v1/chat/completions", json=payload)
 print(f"Estimated age: {response.json()['choices'][0]['message']['content']}")
 ```
 
@@ -135,8 +135,8 @@ print(f"Estimated age: {response.json()['choices'][0]['message']['content']}")
 import OpenAI from 'openai'
 
 const openai = new OpenAI({
-	apiKey: 'not-needed',
-	baseURL: 'http://127.0.0.1:7860/v1',
+	apiKey: 'super-secret-key',
+	baseURL: 'https://coder1-demo.lively-video-dev-hoodoo.livelyvideo.tv/v1',
 	dangerouslyAllowBrowser: true 
 })
 
@@ -185,14 +185,14 @@ payload = {
     "stream": False
 }
 
-response = requests.post("http://localhost:7860/api/generate", json=payload)
+response = requests.post("https://coder1-demo.lively-video-dev-hoodoo.livelyvideo.tv/api/generate", json=payload)
 print(f"Estimated age: {response.json()['response']}")
 ```
 
 ### cURL Example (OpenAI format)
 
 ```bash
-curl -X POST http://localhost:7860/v1/chat/completions \
+curl -X POST https://coder1-demo.lively-video-dev-hoodoo.livelyvideo.tv/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen/Qwen2.5-VL-3B-Instruct",
@@ -219,7 +219,7 @@ curl -X POST http://localhost:7860/v1/chat/completions \
 ### cURL Example (Ollama format)
 
 ```bash
-curl -X POST http://localhost:7860/api/generate \
+curl -X POST https://coder1-demo.lively-video-dev-hoodoo.livelyvideo.tv/api/generate \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen/Qwen2.5-VL-3B-Instruct",
@@ -235,8 +235,8 @@ curl -X POST http://localhost:7860/api/generate \
 Build and run the Docker container:
 
 ```bash
-docker build -t age-estimation-api .
-docker run -p 7860:7860 age-estimation-api
+docker build -t qwen-2.5-vl-model-gateway .
+docker run -p 7860:7860 qwen-2.5-vl-model-gateway
 ```
 
 
