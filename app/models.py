@@ -14,7 +14,7 @@ from app.config import MODEL_NAME, USE_FAST, TORCH_DTYPE, DEVICE_MAP, CACHE_DIR,
 from app.utils import extract_assistant_response
 logger = logging.getLogger(__name__)
 
-class AgeEstimationModel:
+class QwenVisionModel:
     def __init__(self, model_name=MODEL_NAME):
         self.processor = AutoProcessor.from_pretrained(
             model_name,

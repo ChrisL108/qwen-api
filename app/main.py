@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from app.endpoints import openai, ollama
 from app.utils import get_system_info
-from app.models import AgeEstimationModel
+from app.models import QwenVisionModel
 from app.config import API_TOKEN
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ app.include_router(ollama.router)
 async def startup_event():
     try:
         logger.info("Initializing model...")
-        app.state.model = await asyncio.to_thread(AgeEstimationModel)
+        app.state.model = await asyncio.to_thread(QwenVisionModel)
     except Exception as e:
         logger.error(f"Error loading model: {e}")
         logger.error(traceback.format_exc())

@@ -36,21 +36,6 @@ def extract_images_and_prompt(messages):
     return format_message_for_qwen(image_urls, prompt), prompt
 
 
-async def stream_openai_response(result: dict) -> str:
-    response_id = f"chatcmpl-{int(time.time())}"
-    timestamp = int(time.time())
-    age = result.get("age", 0)
-    choice = {"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}
-    response_data = {"id": response_id, "object": "chat.completion.chunk", "created": timestamp, "model": "Qwen/Qwen2.5-VL-3B-Instruct", "choices": [choice]}
-    yield f"data: {json.dumps(response_data)}\n\n"
-    choice = {"index": 0, "delta": {"content": str(age)}, "finish_reason": None}
-    response_data = {"id": response_id, "object": "chat.completion.chunk", "created": timestamp, "model": "Qwen/Qwen2.5-VL-3B-Instruct", "choices": [choice]}
-    yield f"data: {json.dumps(response_data)}\n\n"
-    choice = {"index": 0, "delta": {}, "finish_reason": "stop"}
-    response_data = {"id": response_id, "object": "chat.completion.chunk", "created": timestamp, "model": "Qwen/Qwen2.5-VL-3B-Instruct", "choices": [choice]}
-    yield f"data: {json.dumps(response_data)}\n\n"
-    yield "data: [DONE]\n\n"
-
 @router.post("/v1/chat/completions")
 async def create_chat_completion(
     request: Request, 
@@ -58,6 +43,7 @@ async def create_chat_completion(
     api_key: str = Depends(get_api_key)
 ):
     model = request.app.state.model
+
     if not model:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
@@ -73,8 +59,7 @@ async def create_chat_completion(
     
     if not result.get("success", False):
         raise HTTPException(status_code=500, detail=result.get("error", "Unknown error"))
-    if chat_request.stream:
-        return StreamingResponse(stream_openai_response(result), media_type="text/event-stream")
+
     else:
         response_id = f"chatcmpl-{int(time.time())}"
         raw_response = result.get("response", "")
@@ -104,7 +89,7 @@ async def list_models_openai(api_key: str = Depends(get_api_key)):
     return {
         "data": [
             {
-                "id": "Qwen/Qwen2.5-VL-3B-Instruct",
+                "id": "Qwen/Qwen2.5-VL-72B-Instruct",
                 "object": "model",
                 "created": int(time.time()),
                 "owned_by": "organization-owner"
